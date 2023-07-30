@@ -134,7 +134,7 @@ public class PlayDirector : MonoBehaviour
 
         if (!player.activeSelf)
         {
-            Debug.Log("DAIGAKUORIROAMAGIRI");
+            Debug.Log("aaa");
             Spawn(_nextQueue.Update());
             UpdateNextsView();
         }

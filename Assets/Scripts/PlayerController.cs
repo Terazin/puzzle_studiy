@@ -87,7 +87,7 @@ public class PlayerController : MonoBehaviour
         _puyoControllers[1].SetPos(new Vector3((float)posChild.x, (float)posChild.y, 0.0f));
 
         gameObject.SetActive(true);
-            Debug.Log("MUNOUIMAGIRI");
+            Debug.Log("aaa");
         return true;
 
        
