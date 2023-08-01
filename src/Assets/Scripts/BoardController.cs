@@ -16,6 +16,8 @@ public class BoardController : MonoBehaviour
     int[,] _board = new int[BOARD_HEIGHT, BOARD_WIDTH];
     GameObject[,] _Puyos = new GameObject[BOARD_HEIGHT, BOARD_WIDTH];
 
+    List<FallData> _falls = new();
+    int _fallFrames = 0;
     struct FallData
     {
         public readonly int X { get; }
@@ -29,9 +31,6 @@ public class BoardController : MonoBehaviour
             Dest = dest;
         }
     }
-
-        List<FallData> _falls = new();
-    int _fallFrames = 0;
 
     public void ClearAll() 
     {

@@ -4,7 +4,7 @@ using UnityEngine.SceneManagement;
 
 public class PlayDirector : MonoBehaviour
 {
-    /*struct FallData 
+    struct FallData 
     { 
     public readonly int X { get; }
         public readonly int Y { get; }
@@ -16,7 +16,7 @@ public class PlayDirector : MonoBehaviour
             Y = y;
             Dest = dest;
         }
-    }*/
+    }
     
 
     [SerializeField] GameObject player = default!;
