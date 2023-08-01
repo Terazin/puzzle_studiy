@@ -6,7 +6,7 @@ struct FallData
 {
     public readonly int X { get; }
     public readonly int Y { get; }
-    public readonly int Dest { get; } // 落ちる先
+    public readonly int Dest { get; }
     public FallData(int x, int y, int dest)
     {
         X = x;
@@ -17,7 +17,7 @@ struct FallData
 
 public class BoardController : MonoBehaviour
 {
-    public const int FALL_FRAME_PER_CELL = 5;// 単位セル当たりの落下フレーム数
+    public const int FALL_FRAME_PER_CELL = 5;
     public const int BOARD_WIDTH = 6;
     public const int BOARD_HEIGHT = 14;
 
@@ -26,9 +26,13 @@ public class BoardController : MonoBehaviour
     int[,] _board = new int[BOARD_HEIGHT, BOARD_WIDTH];
     GameObject[,] _Puyos = new GameObject[BOARD_HEIGHT, BOARD_WIDTH];
 
-    // 落ちる際の一次的変数
+    uint _additiveScore = 0;
+
     List<FallData> _falls = new();
     int _fallFrames = 0;
+
+    List<Vector2Int> _erases = new();
+    int _eraseFrames = 0;
 
     private void ClearAll()
     {
@@ -68,7 +72,7 @@ public class BoardController : MonoBehaviour
 
         _board[pos.y, pos.x] = val;
 
-        Debug.Assert(_Puyos[pos.y, pos.x] == null);// 念のための確認
+        Debug.Assert(_Puyos[pos.y, pos.x] == null);
         Vector3 world_position = transform.position + new Vector3(pos.x, pos.y, 0.0f);
         _Puyos[pos.y, pos.x] = Instantiate(prefabPuyo, world_position, Quaternion.identity, transform);
         _Puyos[pos.y, pos.x].GetComponent<PuyoController>().SetPuyoType((PuyoType)val);
@@ -76,39 +80,36 @@ public class BoardController : MonoBehaviour
         return true;
     }
 
-    // 下が空間となっていて落ちるぷよを検索する
     public bool CheckFall()
     {
         _falls.Clear();
         _fallFrames = 0;
 
-        // 落ちる先の高さの記録用
         int[] dsts = new int[BOARD_WIDTH];
         for (int x = 0; x < BOARD_WIDTH; x++) dsts[x] = 0;
 
-        int max_check_line = BOARD_HEIGHT - 1;// 実はぷよぷよ通では最上段は落ちてこない
-        for (int y = 0; y < max_check_line; y++)// 下から上に検索
+        int max_check_line = BOARD_HEIGHT - 1;
+        for (int y = 0; y < max_check_line; y++)
         {
             for (int x = 0; x < BOARD_WIDTH; x++)
             {
                 if (_board[y, x] == 0) continue;
 
                 int dst = dsts[x];
-                dsts[x] = y + 1;// 上のぷよが落ちてくるなら自分の上
+                dsts[x] = y + 1;
 
-                if (y == 0) continue;// 一番下なら落ちない
+                if (y == 0) continue;
 
-                if (_board[y - 1, x] != 0) continue;// 下があれば対象外
+                if (_board[y - 1, x] != 0) continue;
 
                 _falls.Add(new FallData(x, y, dst));
 
-                // データを変更しておく
                 _board[dst, x] = _board[y, x];
                 _board[y, x] = 0;
                 _Puyos[dst, x] = _Puyos[y, x];
                 _Puyos[y, x] = null;
 
-                dsts[x] = dst + 1;// 次の物は落ちたさらに上に乗る
+                dsts[x] = dst + 1;
             }
         }
 
@@ -122,7 +123,7 @@ public class BoardController : MonoBehaviour
         float dy = _fallFrames / (float)FALL_FRAME_PER_CELL;
         int di = (int)dy;
 
-        for (int i = _falls.Count - 1; 0 <= i; i--)// ループ中で削除しても安全なように後ろから検索
+        for (int i = _falls.Count - 1; 0 <= i; i--)
         {
             FallData f = _falls[i];
 
@@ -134,9 +135,132 @@ public class BoardController : MonoBehaviour
                 pos.y = f.Dest;
                 _falls.RemoveAt(i);
             }
-            _Puyos[f.Dest, f.X].transform.localPosition = pos;// 表示位置の更新
+            _Puyos[f.Dest, f.X].transform.localPosition = pos;
+        }
+        return _falls.Count != 0;
+    }
+
+    static readonly uint[] chainBonusTbl = new uint[] {
+        0, 8, 16, 32, 64,
+        96, 128, 160, 192, 224,
+        256, 288, 320, 352, 384,
+        416, 448, 480, 512 };
+
+    static readonly uint[] connectBonusTbl = new uint[] {
+        0, 0, 0, 0, 0, 2, 3, 4, 5, 6, 7,
+    };
+
+    static readonly uint[] colorBonusTbl = new uint[] {
+        0, 3, 6, 12, 24,
+    };
+
+    static readonly Vector2Int[] search_tbl = new Vector2Int[] { Vector2Int.up, Vector2Int.right, Vector2Int.down, Vector2Int.left };
+    public bool CheckErase(int chainCount)
+    {
+        _eraseFrames = 0;
+        _erases.Clear();
+
+        uint[] isChecked = new uint[BOARD_HEIGHT];
+
+        int puyoCount = 0;
+        uint colorBits = 0;
+        uint connectBonus = 0;
+
+        List<Vector2Int> add_list = new();
+        for (int y = 0; y < BOARD_HEIGHT; y++)
+        {
+            for (int x = 0; x < BOARD_WIDTH; x++)
+            {
+                if ((isChecked[y] & (1u << x)) != 0) continue;
+
+                isChecked[y] |= (1u << x);
+
+                int type = _board[y, x];
+                if (type == 0) continue;
+
+                puyoCount++;
+
+                System.Action<Vector2Int> get_connection = null;
+                get_connection = (pos) =>
+                {
+                    add_list.Add(pos);
+
+                    foreach (Vector2Int d in search_tbl)
+                    {
+                        Vector2Int target = pos + d;
+                        if (target.x < 0 || BOARD_WIDTH <= target.x ||
+                            target.y < 0 || BOARD_HEIGHT <= target.y) continue;
+                        if (_board[target.y, target.x] != type) continue;
+                        if ((isChecked[target.y] & (1u << target.x)) != 0) continue;
+
+                        isChecked[target.y] |= (1u << target.x);
+                        get_connection(target);
+                    }
+                };
+
+                add_list.Clear();
+                get_connection(new Vector2Int(x, y));
+
+                if (4 <= add_list.Count)
+                {
+                    connectBonus += connectBonusTbl[System.Math.Min(add_list.Count, connectBonusTbl.Length - 1)];
+                    colorBits |= (1u << type);
+                    _erases.AddRange(add_list);
+                }
+            }
         }
 
-        return _falls.Count != 0;
+        if (chainCount != -1)
+        {
+            uint colorNum = 0;
+            for (; 0 < colorBits; colorBits >>= 1)
+            {
+                colorNum += (colorBits & 1u);
+            }
+
+            uint colorBonus = colorBonusTbl[System.Math.Min(colorNum, colorBonusTbl.Length - 1)];
+            uint chainBonus = chainBonusTbl[System.Math.Min(chainCount, chainBonusTbl.Length - 1)];
+            uint bonus = System.Math.Max(1, chainBonus + connectBonus + colorBonus);
+            _additiveScore += 10 * (uint)_erases.Count * bonus;
+
+            if (puyoCount == 0) _additiveScore += 1800;
+        }
+
+        return _erases.Count != 0;
+    }
+
+    public bool Erase()
+    {
+        _eraseFrames++;
+
+        float t = _eraseFrames * Time.deltaTime;
+        t = 1.0f - 10.0f * ((t - 0.1f) * (t - 0.1f) - 0.1f * 0.1f);
+
+        if (t <= 0.0f)
+        {
+            foreach (Vector2Int d in _erases)
+            {
+                Destroy(_Puyos[d.y, d.x]);
+                _Puyos[d.y, d.x] = null;
+                _board[d.y, d.x] = 0;
+            }
+
+            return false;
+        }
+
+        foreach (Vector2Int d in _erases)
+        {
+            _Puyos[d.y, d.x].transform.localScale = Vector3.one * t;
+        }
+
+        return true;
+    }
+
+    public uint popScore()
+    {
+        uint score = _additiveScore;
+        _additiveScore = 0;
+
+        return score;
     }
 }

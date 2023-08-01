@@ -15,16 +15,16 @@ public class LogicalInput
         QuickDrop = 1 << 4,
         Down = 1 << 5,
 
-        MAX = 6, // 個数
+        MAX = 6
     }
 
-    const int KEY_REPEAT_START_TIME = 12; // 押しっぱなしでキーリピートに入るフレーム数
-    const int KEY_REPEAT_ITERATION_TIME = 1;// キーリピートに入った後の更新フレーム数
+    const int KEY_REPEAT_START_TIME = 12;
+    const int KEY_REPEAT_ITERATION_TIME = 1;
 
-    Key inputRaw;// 現在の値
-    Key inputTrg;// 入力が入った時の値
-    Key inputRel;// 入力が抜けた時の値
-    Key inputRep;// 連続入力
+    Key inputRaw;
+    Key inputTrg;
+    Key inputRel;
+    Key inputRep;
     int[] _trgWaitingTime = new int[(int)Key.MAX];
 
     public bool IsRaw(Key k)
@@ -58,14 +58,11 @@ public class LogicalInput
 
     public void Update(Key inputDev)
     {
-        // 入力が入った/抜けた
         inputTrg = (inputDev ^ inputRaw) & inputDev;
         inputRel = (inputDev ^ inputRaw) & inputRaw;
 
-        // 生データの生成
         inputRaw = inputDev;
 
-        // キーリピートの生成
         inputRep = 0;
         for (int i = 0; i < (int)Key.MAX; i++)
         {
